@@ -1,15 +1,47 @@
+# TARGET = fir
+# OPT ?= -O
+
+# $(TARGET).objdump: $(TARGET)
+# 	riscv64-unknown-elf-objdump -S -D $(TARGET) > $(TARGET).objdump
+# 	spike $(TARGET)
+
+# # For Assembly program
+# $(TARGET): $(TARGET).c Makefile
+# 	riscv64-unknown-elf-gcc -o $(TARGET) -gdwarf-2 $(OPT) \
+# 		-march=rv64gc -mabi=lp64d -mcmodel=medany \
+# 		-nostdlib -static -lm -fno-tree-loop-distribute-patterns \
+# 		-T ../../C/common/test.ld -I ../../C/common \
+# 		$(TARGET).c $(TARGET).S ../../C/common/crt.S ../../C/common/syscalls.c
+
+
 TARGET = fir
+OPT ?= -O
 
 $(TARGET).objdump: $(TARGET)
 	riscv64-unknown-elf-objdump -S -D $(TARGET) > $(TARGET).objdump
 	spike $(TARGET)
-    
-$(TARGET): $(TARGET).c Makefile
-	riscv64-unknown-elf-gcc -o $(TARGET) -g\
-	  -march=rv64gc -mabi=lp64d -mcmodel=medany \
-	  -nostdlib -static -lm -fno-tree-loop-distribute-patterns \
-	  -T../common/test.ld -I../common \
-	  $(TARGET).c ../common/crt.S ../common/syscalls.c
+
+# Compile assembly separately
+fir.o: fir.S
+	riscv64-unknown-elf-gcc -c fir.S -o fir.o
+
+$(TARGET): fir.c fir.o ../../C/common/crt.S ../../C/common/syscalls.c
+	riscv64-unknown-elf-gcc -o $(TARGET) -gdwarf-2 $(OPT) \
+		-march=rv64gc -mabi=lp64d -mcmodel=medany \
+		-nostdlib -static -lm -fno-tree-loop-distribute-patterns \
+		-T ../../C/common/test.ld -I ../../C/common \
+		fir.c fir.o ../../C/common/crt.S ../../C/common/syscalls.c
+
+
+# for C program:
+# $(TARGET): $(TARGET).c Makefile
+# 	riscv64-unknown-elf-gcc -o $(TARGET) -gdwarf-2 $(OPT)\
+# 	  -march=rv64gc -mabi=lp64d -mcmodel=medany \
+# 	  -nostdlib -static -lm -fno-tree-loop-distribute-patterns \
+# 	  -T../common/test.ld -I../common \
+# 	  $(TARGET).c ../common/crt.S ../common/syscalls.c
+
+
 # Compiler flags:
 #  -o $(TARGET) defines the name of the output file
 #  -g generates debugging symbols for gdb
