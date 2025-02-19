@@ -64,6 +64,7 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
   logic [11:0]           CSRAdrM, CSRAdrW;
   logic                  wfiM;
   logic                  InterruptM, InterruptW;
+  logic                  MExtInt, SExtInt, MTimerInt, MSwInt;
 
   //For VM Verification
   logic [(P.XLEN-1):0]     IVAdrF,IVAdrD,IVAdrE,IVAdrM,IVAdrW,DVAdrM,DVAdrW;
@@ -105,12 +106,20 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
     assign STATUS_UXL     = testbench.dut.core.priv.priv.csr.csrsr.STATUS_UXL;
     assign wfiM           = testbench.dut.core.priv.priv.wfiM;
     assign InterruptM     = testbench.dut.core.priv.priv.InterruptM;
+    assign MExtInt        = testbench.dut.MExtInt;
+    assign SExtInt        = testbench.dut.SExtInt;
+    assign MTimerInt      = testbench.dut.MTimerInt;
+    assign MSwInt         = testbench.dut.MSwInt;
   end else begin
     assign PrivilegeModeW = 2'b11;
     assign STATUS_SXL     = 0;
     assign STATUS_UXL     = 0;
     assign wfiM           = 0;
     assign InterruptM     = 0;
+    assign MExtInt        = 0;
+    assign SExtInt        = 0;
+    assign MTimerInt      = 0;
+    assign MSwInt         = 0;
   end
 
   //For VM Verification
@@ -725,6 +734,12 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
     assign rvvi.csr[0][0][index] = CSRArray[index];  
   end
 
+  // Interrupts
+  assign rvvi.m_ext_intr[0][0] = MExtInt;
+  assign rvvi.s_ext_intr[0][0] = SExtInt;
+  assign rvvi.m_timer_intr[0][0] = MTimerInt;
+  assign rvvi.m_soft_intr[0][0] = MSwInt;
+
   // *** implementation only cancel? so sc does not clear?
   assign rvvi.lrsc_cancel[0][0] = 0;
 
@@ -742,7 +757,7 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
   end
   
   always_ff @(posedge clk) begin
-	if(valid) begin
+    if(valid) begin
       if(`STD_LOG) begin
         $fwrite(file, "%016x, %08x, %s\t\t", rvvi.pc_rdata[0][0], rvvi.insn[0][0], instrWName);
         for(index2 = 0; index2 < NUM_REGS; index2 += 1) begin
@@ -785,7 +800,16 @@ module wallyTracer import cvw::*; #(parameter cvw_t P) (rvviTrace rvvi);
         end
       end
     end
-    if(HaltW) $finish;
+    if(HaltW) begin
+`ifdef FCOV
+      $display("Functional coverage test complete.");
+`endif
+`ifdef QUESTA
+      $stop;  // if this is changed to $finish for Questa, wally.do does not go to the next step to run coverage and terminates without allowing GUI debug
+`else
+      $finish;
+`endif
+    end
   end
 endmodule
 
