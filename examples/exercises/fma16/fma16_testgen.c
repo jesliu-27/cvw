@@ -17,6 +17,10 @@ typedef union sp {
 // lists of tests, terminated with 0x8000
 uint16_t easyExponents[] = {15, 0x8000};
 uint16_t easyFracts[] = {0, 0x200, 0x8000}; // 1.0 and 1.1
+uint16_t medExponents[] = {0x3D, 0x3E, 0x3F, 0x40, 0x8000}; // 0x3F = maxExpo, 0x40 = minExpo
+uint16_t medFracts[] = {0x200, 0x400, 0x600, 0x800, 0x8000}; 
+uint16_t specialValues[] = {0x0000, 0x7C00, 0xFC00, 0x7E00, 0xFE00, 0x8000}; // zero, +Inf, -Inf, NaN, NaN 
+
 
 void softfloatInit(void) {
     softfloat_roundingMode = softfloat_round_minMag; 
@@ -129,6 +133,92 @@ void genMulTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, 
     fclose(fptr);
 }
 
+void genAddTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed ){
+    int i, j, k, numCases;
+    float16_t x, y, z;
+    float16_t cases[100000];
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    prepTests(e, f, testName, desc, cases, fptr, &numCases);
+    z.v = 0x0000;
+    for (i=0; i < numCases; i++) { 
+        x.v = cases[i].v;
+        for (j=0; j<numCases; j++) {
+            y.v = cases[j].v;
+            for (k=0; k<=sgn; k++) {
+                y.v ^= (k<<15);
+                z.v = 0x0000;
+                genCase(fptr, x, y, z, 0, 1, 0, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+            }
+        }
+    }
+    fclose(fptr);
+
+}
+
+void genFmatests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed){
+    int i, j, k, m, numCases;
+    float16_t x, y, z;
+    float16_t cases[100000];
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    prepTests(e, f, testName, desc, cases, fptr, &numCases);
+    
+    for (i=0; i < numCases; i++) { 
+        x.v = cases[i].v;
+        for (j=0; j<numCases; j++) {
+            y.v = cases[j].v;
+            for (k=0; k<numCases; k++) {
+                z.v = cases[k].v;
+                for (m=0; m<=sgn; m++) {
+                    y.v ^= (m<<15);
+                    genCase(fptr, x, y, z, 1, 1, 0, 0, roundingMode, 0, 0, 0);
+                }
+            }
+        }
+    }
+    fclose(fptr);
+}
+
+void genSpecialTests(char *testName, char *desc, int roundingMode) {
+    int i, j, k;
+    float16_t x, y, z;
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    fprintf(fptr, "%s\n", desc);
+    
+    for (i=0; specialValues[i] != 0x8000; i++) {
+        x.v = specialValues[i];
+        for (j=0; specialValues[j] != 0x8000; j++) {
+            y.v = specialValues[j];
+            for (k=0; specialValues[k] != 0x8000; k++) {
+                z.v = specialValues[k];
+                genCase(fptr, x, y, z, 1, 1, 0, 0, roundingMode, 1, 1, 1);
+            }
+        }
+    }
+    fclose(fptr);
+}
+
+
 int main()
 {
     if (system("mkdir -p work") != 0) exit(1); // create work directory if it doesn't exist
@@ -142,6 +232,20 @@ int main()
     genMulTests(easyExponents, easyFracts, 0, "fmul_0_rne", "// Multiply with exponent of 0, significand of 1.0 and 1.1, RNE", 1, 0, 0, 0); */
 
     // Add your cases here
-  
+    genMulTests(medExponents, medFracts, 0, "fmul_1", "// Multiply with varied normal exponents and fractions, RZ", 0, 0, 0, 0);
+    genMulTests(medExponents, medFracts, 1, "fmul_2", "// Multiply with varied normal exponents and fractions, including negative Y values, RZ", 0, 0, 0, 0);
+
+    genAddTests(easyExponents, easyFracts, 0, "fadd_0", "// Addition with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);  
+    genAddTests(medExponents, medFracts, 0, "fadd_1", "// Addition with varied normal exponents and fractions, RZ", 0, 0, 0, 0); 
+    genAddTests(medExponents, medFracts, 1, "fadd_2", "// Addition with varied normal exponents and fractions, including negative Y values, RZ", 0, 0, 0, 0);
+
+    genFmatests(easyExponents, easyFracts, 0, "fma_0", "// FMA with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);
+    genFmatests(medExponents, medFracts, 0, "fma_1", "// FMA with varied normal exponents and fractions, RZ", 0, 0, 0, 0);
+    genFmatests(medExponents, medFracts, 1, "fma_2", "// FMA with varied normal exponents and fractions, including negative Y values, RZ", 0, 0, 0, 0);
+
+    genSpecialTests("fma_special_rz", "// Special cases including zero, NaN, Inf, RZ", 00);
+    genSpecialTests("fma_special_rne", "// Special cases including zero, NaN, Inf, RNE", 01);
+    genSpecialTests("fma_special_rm", "// Special cases including zero, NaN, Inf, RP", 10);
+    genSpecialTests("fma_special_rp", "// Special cases including zero, NaN, Inf, RN", 11);
     return 0;
 }
