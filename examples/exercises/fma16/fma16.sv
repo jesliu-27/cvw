@@ -7,37 +7,37 @@ module fma16(
 );
 
 /* multiply two positive half-precision floats */
-logic carry, sign_x, sign_y, sign_res_mul, sign_res;
-logic[10:0] mantissa_x, mantissa_y;
-logic[9:0] fraction_res;
+logic carry, signX, signY, signResMul, signRes;
+logic[10:0] mantissaX, mantissaY;
+logic[9:0] fractionRes;
 logic[21:0] product;
-logic[4:0] exponents_x;
-logic[4:0] exponents_y;
-logic[4:0] exponents_res;
+logic[4:0] exponentsX;
+logic[4:0] exponentsY;
+logic[4:0] exponentsRes;
 logic[4:0] bias;
-logic[15:0] res_mul;
+logic[15:0] resMul;
 always_comb
     begin
         // Sign
-        sign_x = x[15];
-        sign_y = y[15];
-        sign_res_mul = sign_x ^ sign_y;
-        sign_res = sign_res_mul ^ negp;
+        signX = x[15];
+        signY = y[15];
+        signResMul = signX ^ signY;
+        signRes = signResMul ^ negp;
 
         // Fraction part
-        mantissa_x = {1'b1, x[9:0]};
-        mantissa_y = {1'b1, y[9:0]};
-        product = mantissa_x * mantissa_y;
+        mantissaX = {1'b1, x[9:0]};
+        mantissaY = {1'b1, y[9:0]};
+        product = mantissaX * mantissaY;
         carry = product[21];
-        fraction_res = carry ? product[20:11]:product[19:10];
+        fractionRes = carry ? product[20:11]:product[19:10];
 
         // Exponents
         bias = 5'd15;
-        exponents_x = x[14:10] - bias;
-        exponents_y = y[14:10] - bias;
-        exponents_res = exponents_x + exponents_y + bias +{4'b0000, carry};
-        res_mul = {sign_res, exponents_res, fraction_res};
-        result = res_mul;
+        exponentsX = x[14:10] - bias;
+        exponentsY = y[14:10] - bias;
+        exponentsRes = exponentsX + exponentsY + bias +{4'b0000, carry};
+        resMul = {signRes, exponentsRes, fractionRes};
+        result = resMul;
         flags = 0;
 
     end
