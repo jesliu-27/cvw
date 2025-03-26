@@ -2,7 +2,7 @@ module fma16(
     input  logic [15:0] x, y, z,      // 16 bit half-precision float
     input  logic mul, add, negp, negz,
     input  logic [1:0] roundmode,
-    output logic [15:0] res,
+    output logic [15:0] result,
     output logic [3:0] flags
 );
 
@@ -37,7 +37,7 @@ always_comb
         exponents_y = y[14:10] - bias;
         exponents_res = exponents_x + exponents_y + bias +{4'b0000, carry};
         res_mul = {sign_res, exponents_res, fraction_res};
-        res = res_mul;
+        result = res_mul;
         flags = 0;
 
     end
