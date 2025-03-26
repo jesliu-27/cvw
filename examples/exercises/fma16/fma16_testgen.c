@@ -17,8 +17,8 @@ typedef union sp {
 // lists of tests, terminated with 0x8000
 uint16_t easyExponents[] = {15, 0x8000};
 uint16_t easyFracts[] = {0, 0x200, 0x8000}; // 1.0 and 1.1
-uint16_t medExponents[] = {0x3D, 0x3E, 0x3F, 0x40, 0x8000}; // 0x3F = maxExpo, 0x40 = minExpo
-uint16_t medFracts[] = {0x200, 0x400, 0x600, 0x800, 0x8000}; 
+uint16_t medExponents[] = {30, 24, 9, 1, 0x8000}; 
+uint16_t medFracts[] = {0x200, 0x001, 1023, 0x128, 0x8000}; 
 uint16_t specialValues[] = {0x0000, 0x7C00, 0xFC00, 0x7E00, 0xFE00, 0x8000}; // zero, +Inf, -Inf, NaN, NaN 
 
 
@@ -133,7 +133,7 @@ void genMulTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, 
     fclose(fptr);
 }
 
-void genAddTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed ){
+void genAddTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed) {
     int i, j, k, numCases;
     float16_t x, y, z;
     float16_t cases[100000];
@@ -146,20 +146,18 @@ void genAddTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, 
         exit(1);
     }
     prepTests(e, f, testName, desc, cases, fptr, &numCases);
-    z.v = 0x0000;
+    y.v = 0x3C00;
     for (i=0; i < numCases; i++) { 
         x.v = cases[i].v;
         for (j=0; j<numCases; j++) {
-            y.v = cases[j].v;
+            z.v = cases[j].v;
             for (k=0; k<=sgn; k++) {
-                y.v ^= (k<<15);
-                z.v = 0x0000;
+                z.v ^= (k<<15);
                 genCase(fptr, x, y, z, 0, 1, 0, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
             }
         }
     }
     fclose(fptr);
-
 }
 
 void genFmatests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed){
