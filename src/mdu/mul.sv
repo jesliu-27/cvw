@@ -35,51 +35,55 @@ module mul #(parameter XLEN) (
   output logic [XLEN*2-1:0]   ProdM                           // double-widthproduct
 );
 
-  // Number systems
-  // Let A' = sum(i=0, XLEN-2, A[i]*2^i)
-  // Unsigned: A = A' + A[XLEN-1]*2^(XLEN-1)
-  // Signed:   A = A' - A[XLEN-1]*2^(XLEN-1)
+    logic [XLEN*2-1:0]  PP1M, PP2M, PP3M, PP4M;               // registered partial proudcts
+    logic [XLEN*2-1:0]  PP1E, PP2E, PP3E, PP4E;
+    logic               Am, Bm;
+    logic [XLEN-1:0]    Aprime, Bprime;
+    logic               mul, mulh, mulhsu, mulhu;
+    logic [XLEN-2:0]    PA, PB;
+    logic               Pm;
 
-  // Multiplication: A*B
-  // Let P' = A' * B'
-  //     PA = (A' * B[XLEN-1]) 
-  //     PB = (B' * A[XLEN-1])
-  //     PP = A[XLEN-1] * B[XLEN-1]
-  // Signed * Signed     = P' + (-PA - PB)*2^(XLEN-1) + PP*2^(2XLEN-2)
-  // Signed * Unsigned   = P' + ( PA - PB)*2^(XLEN-1) - PP*2^(2XLEN-2)
-  // Unsigned * Unsigned = P' + ( PA + PB)*2^(XLEN-1) + PP*2^(2XLEN-2)
-
-  logic [XLEN-1:0]    Aprime, Bprime;                       // lower bits of source A and B
-  logic               MULH, MULHSU;                         // type of multiply
-  logic [XLEN-2:0]    PA, PB;                               // product of msb and lsbs
-  logic               PP;                                   // product of msbs
-  logic [XLEN*2-1:0]  PP1E, PP2E, PP3E, PP4E;               // partial products
-  logic [XLEN*2-1:0]  PP1M, PP2M, PP3M, PP4M;               // registered partial proudcts
- 
   //////////////////////////////
   // Execute Stage: Compute partial products
   //////////////////////////////
 
   assign Aprime = {1'b0, ForwardedSrcAE[XLEN-2:0]};
   assign Bprime = {1'b0, ForwardedSrcBE[XLEN-2:0]};
+  assign Am     = ForwardedSrcAE[XLEN-1];
+  assign Bm     = ForwardedSrcBE[XLEN-1];
+  assign PA     = {(XLEN-1){Bm}} & ForwardedSrcAE[XLEN-2:0]; 
+  assign PB     = {(XLEN-1){Am}} & ForwardedSrcBE[XLEN-2:0];  
+  assign Pm     = Am & Bm;
+
+  // type of mul
+  assign mul    = (Funct3E == 3'b000);
+  assign mulh   = (Funct3E == 3'b001); //signed x signed
+  assign mulhsu = (Funct3E == 3'b010); //signed x unsigned
+  assign mulhu  = (Funct3E == 3'b011); // unsigned x unesigned
+
   assign PP1E = Aprime * Bprime;
-  assign PA = {(XLEN-1){ForwardedSrcAE[XLEN-1]}} & ForwardedSrcBE[XLEN-2:0];  
-  assign PB = {(XLEN-1){ForwardedSrcBE[XLEN-1]}} & ForwardedSrcAE[XLEN-2:0];
-  assign PP = ForwardedSrcAE[XLEN-1] & ForwardedSrcBE[XLEN-1];
 
-  // flavor of multiplication
-  assign MULH   = (Funct3E == 3'b001);
-  assign MULHSU = (Funct3E == 3'b010);
+  always_comb
+  if(mulh)
+    begin
+      PP2E = {2'b00, ~PA, {(XLEN-1){1'b0}}}; 
+      PP3E = {2'b00, ~PB, {(XLEN-1){1'b0}}}; 
+      PP4E = {1'b1, Pm, {(XLEN-3){1'b0}}, 1'b1, {(XLEN){1'b0}}};
+    end
+  else if (mulhsu)
+    begin
+      PP2E = {2'b00, PA, {(XLEN-1){1'b0}}}; 
+      PP3E = {2'b00, ~PB, {(XLEN-1){1'b0}}}; 
+      PP4E = {1'b1, ~Pm, {(XLEN-2){1'b0}}, 1'b1, {(XLEN-1){1'b0}}};
+    end
+  else
+    begin
+      PP2E =  {2'b00, PA, {(XLEN-1){1'b0}}}; 
+      PP3E =  {2'b00, PB, {(XLEN-1){1'b0}}}; 
+      PP4E =  {1'b0, Pm, {(XLEN-2){1'b0}}, {(XLEN){1'b0}}};
+    end
 
-  // Select partial products, handling signed multiplication
-  assign PP2E = {2'b00, (MULH | MULHSU) ? ~PA : PA, {(XLEN-1){1'b0}}};
-  assign PP3E = {2'b00, (MULH) ? ~PB : PB, {(XLEN-1){1'b0}}};
-  always_comb 
-  if (MULH)        PP4E = {1'b1, PP, {(XLEN-3){1'b0}}, 1'b1, {(XLEN){1'b0}}}; 
-  else if (MULHSU) PP4E = {1'b1, ~PP, {(XLEN-2){1'b0}}, 1'b1, {(XLEN-1){1'b0}}};
-  else             PP4E = {1'b0, PP, {(XLEN*2-2){1'b0}}};
 
-  //////////////////////////////
   // Memory Stage: Sum partial proudcts
   //////////////////////////////
 
