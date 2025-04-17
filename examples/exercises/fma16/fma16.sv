@@ -29,11 +29,13 @@ logic[6:0]      Se;
 logic[21:0]     Sm;
 
 logic           XZero, YZero, ZZero;
+logic           XInf, YInf, ZInf;
+logic           XNaN, YNaN, ZNaN;
 
 assign bias     =  5'd15;           // bias = 15
-assign XZero    = ~|{1'b1, x[9:0]};
-assign YZero    = ~|{1'b1, y[9:0]};
-assign ZZero    = ~|{1'b1, z[9:0]};
+// unpack
+unpack unpack(x, y, z, XZero, YZero, ZZero, XInf, YInf, ZInf, XNaN, YNaN, ZNaN);
+
 // fmul
 fmaMul fmaMul(x, y, bias, negp, XZero, YZero, Ps, Pe, Pm);
 
@@ -81,13 +83,19 @@ module fmaMul(
     // calculate product's sign
     assign Ps = Xs ^ Ys ^ negp;
 
-    // calculate product's exponent
-    assign PZero        = XZero | YZero;    // if input = 0, Pe = 0
-    assign PExponent    = {2'b0, Xe} + {2'b0, Ye} - {2'b0, bias};  // Xe+Ye-bias
-    assign Pe           = PZero ? '0 : PExponent;
+    // // calculate product's exponent
+    // assign PZero        = XZero | YZero;    // if input = 0, Pe = 0
+    // assign PExponent    = {2'b0, Xe} + {2'b0, Ye} - {2'b0, bias};  // Xe+Ye-bias
+    // assign Pe           = PZero ? '0 : PExponent;
 
-    // calculate product's significand
-    assign Pm = Xm * Ym;
+    // // calculate product's significand
+    // assign Pm = Xm * Ym;
+
+    assign PZero     = XZero | YZero;
+
+    assign PExponent = {2'b0, Xe} + {2'b0, Ye} - {2'b0, bias};
+    assign Pe        = PZero ? 5'b0     : PExponent;
+    assign Pm        = PZero ? 11'b0    : Xm * Ym;
 
 endmodule
 
@@ -269,5 +277,26 @@ module fmaAdd(
     // assign Se = 0;
     // assign Ss = 0;
 
+
+endmodule
+
+module unpack(
+    input   logic [15:0] x, y, z,
+    output  logic XZero, YZero, ZZero,
+    output  logic XInf, YInf, ZInf,
+    output  logic XNaN, YNaN, ZNaN
+);
+
+assign XZero = (x[14:0] == 15'b0);
+assign YZero = (y[14:0] == 15'b0);
+assign ZZero = (z[14:0] == 15'b0);
+
+assign XInf  = (x[14:10] == 5'b11111) && (x[9:0] == 10'b0);
+assign YInf  = (y[14:10] == 5'b11111) && (y[9:0] == 10'b0);
+assign ZInf  = (z[14:10] == 5'b11111) && (z[9:0] == 10'b0);
+
+assign XNaN = (x[14:10] == 5'b11111) && (x[9:0] != 10'b0);
+assign YNaN = (y[14:10] == 5'b11111) && (y[9:0] != 10'b0);
+assign ZNaN = (z[14:10] == 5'b11111) && (z[9:0] != 10'b0);
 
 endmodule
