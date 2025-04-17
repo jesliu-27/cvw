@@ -40,12 +40,12 @@ unpack unpack(x, y, z, XZero, YZero, ZZero, XInf, YInf, ZInf, XNaN, YNaN, ZNaN);
 fmaMul fmaMul(x, y, bias, negp, XZero, YZero, Ps, Pe, Pm);
 
 // temp result for fmul test
-assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
+// assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
 
 // fadd
 
-// fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
-// assign result = {Ss, Se[4:0] , Sm[20:11]};
+fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
+assign result = {Ss, Se[4:0] , Sm[20:11]};
 
 
 assign flags = 0;
@@ -94,8 +94,8 @@ module fmaMul(
     assign PZero     = XZero | YZero;
 
     assign PExponent = {2'b0, Xe} + {2'b0, Ye} - {2'b0, bias};
-    assign Pe        = PZero ? 5'b0     : PExponent;
-    assign Pm        = PZero ? 11'b0    : Xm * Ym;
+    assign Pe        = PZero ? 7'b0     : PExponent;
+    assign Pm        = PZero ? 22'b0    : Xm * Ym;
 
 endmodule
 
@@ -135,6 +135,7 @@ module fmaAdd(
 
     logic[40:0]     Mm;
     logic           valid;
+    logic           Pg;
 
 
     assign Zs           = z[15];
@@ -146,44 +147,23 @@ module fmaAdd(
 
 
     // Determine the alignment shift count
-    assign KillP        = XZero | YZero;        // kill product if P = 0 or Z is too big
     assign ZmPreshift   = {15'b0, Zm, 15'b0};   // placed z in the upper bit
+    assign KillZ = 0;
+    assign KillP = 0;
 
 
     always_comb begin
-        if(KillP) begin
-            ZmShifted = ZmPreshift;
+        if (Pe > {2'b0, Ze}) begin
+            Acnt         = Pe - {2'b0, Ze};
+            ZmShifted = ZmPreshift >> Acnt;
+        end else begin
+            Acnt         = {2'b0, Ze} - Pe;
+            ZmShifted = ZmPreshift << Acnt;
         end
 
-        else begin
-            if (Pe > {2'b0, Ze}) begin
-                Acnt         = Pe - {2'b0, Ze};
-                ZmShifted = ZmPreshift >> Acnt;
-            end else begin
-                Acnt         = {2'b0, Ze} - Pe;
-                ZmShifted = ZmPreshift << Acnt;
-            end
-        end
     end
 
     assign PmShifted = {14'b0, Pm, 5'b0};
-
-
-    // always_comb begin
-    //     if (subtract) begin
-    //         if (Am > Pm) begin
-    //             {NegSum, PreSum} = {1'b0, Am} + {1'b0, AmInv} + {21'd0, (~ASticky | KillPm)};
-    //             Ss = As;
-    //             Mm = PreSum;
-    //         end else begin
-    //             {NegSum, PreSum} = {1'b0, Pm} + {1'b0, AmInv} + {21'd0, (~ASticky | KillP)};
-    //             Ss = Ps;
-    //             Mm = PreSum;
-    //         end
-    //     end else begin
-    //         Mm = Pm + Am;
-    //         Ss = Ps;
-    //     end
 
   always_comb begin
         if (subtract) begin
@@ -198,40 +178,6 @@ module fmaAdd(
             Mm =  ZmShifted + PmShifted;
             Ss = Ps;
         end
-
-
-
-
-    // Determine the alignment shift count
-    // Shift the signiificand of Z into alignment
-
-    // always_comb begin
-    //     if (Pe == {2'b0, Ze}) begin
-    //         Am = {11'b0, Zm};
-    //     end
-    //     else if (Pe > {2'b0, Ze}) begin
-    //         Acnt = Pe - {2'b0, Ze};
-    //         Am   = {11'b0, Zm} >> Acnt;
-    //     end
-    //     else begin
-    //         Acnt =  {2'b0, Ze} - Pe;
-    //         Am   = {11'b0, Zm} << Acnt;
-    //     end
-
-    //     if(As == Ps) begin
-    //         Mm   = Pm + Am;
-    //         Ss = Zs;
-    //     end
-    //     else begin
-    //         if (Am > Pm) begin
-    //             Mm = Am - Pm;
-    //             Ss = Zs;
-    //         end
-    //         else begin
-    //             Mm = Pm - Am;
-    //             Ss = Ps;
-    //         end
-    //     end
 
 
     // Finding the leading 1 for normaliztion shift
@@ -258,21 +204,57 @@ module fmaAdd(
             41'b00000000000000000001?????????????????????: begin Mcnt = 6'd19;end
             41'b000000000000000000001????????????????????: begin Mcnt = 6'd20;end
             41'b0000000000000000000001???????????????????: begin Mcnt = 6'd21;end
+            41'b00000000000000000000001??????????????????: begin Mcnt = 6'd22;end
+            41'b000000000000000000000001?????????????????: begin Mcnt = 6'd23;end
+            41'b0000000000000000000000001????????????????: begin Mcnt = 6'd24;end
+            41'b00000000000000000000000001???????????????: begin Mcnt = 6'd25;end
+            41'b000000000000000000000000001??????????????: begin Mcnt = 6'd26;end
+            41'b0000000000000000000000000001?????????????: begin Mcnt = 6'd27;end
+            41'b00000000000000000000000000001????????????: begin Mcnt = 6'd28;end
+            41'b000000000000000000000000000001???????????: begin Mcnt = 6'd29;end
+            41'b0000000000000000000000000000001??????????: begin Mcnt = 6'd30;end
+            41'b00000000000000000000000000000001?????????: begin Mcnt = 6'd31;end
+            41'b000000000000000000000000000000001????????: begin Mcnt = 6'd32;end
+            41'b0000000000000000000000000000000001???????: begin Mcnt = 6'd33;end
+            41'b00000000000000000000000000000000001??????: begin Mcnt = 6'd34;end
+            41'b000000000000000000000000000000000001?????: begin Mcnt = 6'd35;end
+            41'b0000000000000000000000000000000000001????: begin Mcnt = 6'd36;end
+            41'b00000000000000000000000000000000000001???: begin Mcnt = 6'd37;end
+            41'b000000000000000000000000000000000000001??: begin Mcnt = 6'd38;end
+            41'b0000000000000000000000000000000000000001?: begin Mcnt = 6'd39;end
+            41'b00000000000000000000000000000000000000001: begin Mcnt = 6'd40;end
             default: begin
                 Mcnt = 6'd0;
             end
         endcase
-    end
+    
 
     // assign MmC  = Mm << 7'd14;
     // assign Sm = MmC[40:19];
     // assign Se = Pe + 7'd15 -  7'd10;
 
-    assign MmC = (Mm << Mcnt);
-    assign Sm = MmC[40:19];
-    assign Se = Pe + 7'd15 - Mcnt;
+    // assign MmC = (Mm << Mcnt);
+    // assign Sm = MmC[40:19];
+    // assign Se = Pe + 7'd15 - Mcnt;
 
+    if (KillP) begin
+        Sm = Pm;
+        Se = Pe;
+    end
+    
+    else if(KillZ) begin
+        Sm = {Zm, 11'b0};
+        Se = {2'b0, Ze};
+    end
 
+    else begin
+        MmC = (Mm << Mcnt);
+        Sm = MmC[40:19];
+        Se = Pe + 7'd15 - Mcnt;
+
+    end
+    
+  end
     // assign Sm = 0;
     // assign Se = 0;
     // assign Ss = 0;
@@ -300,3 +282,4 @@ assign YNaN = (y[14:10] == 5'b11111) && (y[9:0] != 10'b0);
 assign ZNaN = (z[14:10] == 5'b11111) && (z[9:0] != 10'b0);
 
 endmodule
+
