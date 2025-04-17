@@ -1,4 +1,3 @@
-// fma16_testgen.c
 // David_Harris 8 February 2025
 // Generate tests for 16-bit FMA
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
@@ -16,10 +15,13 @@ typedef union sp {
 
 // lists of tests, terminated with 0x8000
 uint16_t easyExponents[] = {15, 0x8000};
-uint16_t easyFracts[] = {0, 0x200, 0x8000};
+uint16_t easyFracts[] = {0, 0x200, 0x8000}; // 1.0 and 1.1
 
-uint16_t medExponents[] = {30, 25, 10, 1, 0x8000};
-uint16_t medFracts[] = {0x200, 0x001, 1023, 0x128, 0x8000}; 
+uint16_t medExponents[] = {30, 24, 16, 14, 8, 1, 0x8000};
+uint16_t medFracts[] = {1, 512, 600, 1023, 0x8000};
+
+uint16_t specialExponents[] = {31, 30, 16, 14, 1, 0, 0x8000};
+uint16_t specialFracts[] = {0, 1, 511, 1023, 1022, 0x8000};
 
 void softfloatInit(void) {
     softfloat_roundingMode = softfloat_round_minMag; 
@@ -40,7 +42,7 @@ float convFloat(float16_t f16) {
 }
 
 void genCase(FILE *fptr, float16_t x, float16_t y, float16_t z, int mul, int add, int negp, int negz, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed) {
-    float16_t result;
+    float16_t result, tempNegp;
     int op, flagVals;
     char calc[80], flags[80];
     float32_t x32, y32, z32, r32;
@@ -49,12 +51,15 @@ void genCase(FILE *fptr, float16_t x, float16_t y, float16_t z, int mul, int add
 
     if (!mul) y.v = 0x3C00; // force y to 1 to avoid multiply
     if (!add) z.v = 0x0000; // force z to 0 to avoid add
-    if (negp) x.v ^= 0x8000; // flip sign of x to negate p
+    if (negp) x.v ^= 0x8000; // flip sign bit
     if (negz) z.v ^= 0x8000; // flip sign of z to negate z
     op = roundingMode << 4 | mul<<3 | add<<2 | negp<<1 | negz;
 //    printf("op = %02x rm %d mul %d add %d negp %d negz %d\n", op, roundingMode, mul, add, negp, negz);
     softfloat_exceptionFlags = 0; // clear exceptions
     result = f16_mulAdd(x, y, z); // call SoftFloat to compute expected result
+
+    if (negp) x.v ^= 0x8000; // flip sign bit to print original x value
+    if (negz) z.v ^= 0x8000; // flip sign of z to negate z
 
     // Extract expected flags from SoftFloat
     sprintf(flags, "NV: %d OF: %d UF: %d NX: %d", 
@@ -80,7 +85,7 @@ void genCase(FILE *fptr, float16_t x, float16_t y, float16_t z, int mul, int add
     float16_t resultmag = result;
     resultmag.v &= 0x7FFF; // take absolute value
     if (f16_lt(resultmag, smallest) && (resultmag.v != 0x0000)) fprintf (fptr, "// skip denorm: ");
-    if ((softfloat_exceptionFlags >> 1) % 2) fprintf(fptr, "// skip underflow: ");
+    if ((softfloat_exceptionFlags) >> 1 % 2) fprintf(fptr, "// skip underflow: ");
 
     // skip special cases if requested
     if (resultmag.v == 0x0000 && !zeroAllowed) fprintf(fptr, "// skip zero: ");
@@ -105,6 +110,106 @@ void prepTests(uint16_t *e, uint16_t *f, char *testName, char *desc, float16_t *
         }
 }
 
+void genAddTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed) {
+    int i, j, k, numCases;
+    float16_t x, y, z;
+    float16_t cases[100000];
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    prepTests(e, f, testName, desc, cases, fptr, &numCases);
+    for (i=0; i < numCases; i++) { 
+        x.v = cases[i].v;
+        for (j=0; j<numCases; j++) {
+            z.v = cases[j].v;
+            for (k=0; k<=sgn; k++) {
+                z.v ^= (k<<15);
+                genCase(fptr, x, y, z, 0, 1, k, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+                if (sgn == 1){ // to ensure the same test does not get generated three times when k = 1
+                    genCase(fptr, x, y, z, 0, 1, 0, k, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+                    genCase(fptr, x, y, z, 0, 1, k, k, roundingMode, zeroAllowed, infAllowed, nanAllowed); // tests negative, negative 
+                }
+            }
+        }
+    }
+    fclose(fptr);
+}
+
+void genMultiplyAccumulateTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed) {
+    int i, j, t, k, s, numCases;
+    float16_t x, y, z;
+    float16_t cases[100000];
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    prepTests(e, f, testName, desc, cases, fptr, &numCases);
+    for (i=0; i < numCases; i++) { 
+        x.v = cases[i].v;
+        for (j=0; j<numCases; j++) {
+            y.v = cases[j].v;
+            // for(s=0; s<sgn; s++){ 
+            //     y.v ^= cases[i].v; 
+                for (t=0;  t<numCases; t++){
+                    z.v = cases[t].v;
+                    for (k=0; k<=sgn; k++) {
+                        z.v ^= (k<<15);
+                        genCase(fptr, x, y, z, 1, 1, k, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+                        if (sgn == 1) { // to ensure the same test does not get generated three times when k = 1
+                            genCase(fptr, x, y, z, 1, 1, 0, k, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+                            genCase(fptr, x, y, z, 1, 1, k, k, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+                        // }
+                    }
+                }
+            }
+        }
+    }
+    fclose(fptr);
+}
+
+void genSpecialTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode) {
+    int i, j, t, k, numCases;
+    float16_t x, y, z;
+    float16_t cases[100000];
+    FILE *fptr;
+    char fn[80];
+ 
+    sprintf(fn, "work/%s.tv", testName);
+    if ((fptr = fopen(fn, "w")) == 0) {
+        printf("Error opening to write file %s.  Does directory exist?\n", fn);
+        exit(1);
+    }
+    prepTests(e, f, testName, desc, cases, fptr, &numCases);
+    for (i=0; i < numCases; i++) { 
+        x.v = cases[i].v;
+        for (j=0; j<numCases; j++) {
+            y.v = cases[j].v;
+            for (t=0;  t<numCases; t++){
+                z.v = cases[t].v;
+                for (k=0; k<=sgn; k++) {
+                    z.v ^= (k<<15);
+                    genCase(fptr, x, y, z, 1, 1, k, 0, roundingMode, 1, 1, 1); // last 3 inputs set to 1: zeroAllowed, infAllowed, nanAllowed
+                    if (sgn == 1){ // to ensure the same test does not get generated three times when k = 1
+                        genCase(fptr, x, y, z, 1, 1, 0, k, roundingMode, 1, 1, 1); 
+                        genCase(fptr, x, y, z, 1, 1, k, k, roundingMode, 1, 1, 1);
+                    }
+                }
+            }
+
+        }
+    }
+    fclose(fptr);
+}
+
 void genMulTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, int roundingMode, int zeroAllowed, int infAllowed, int nanAllowed) {
     int i, j, k, numCases;
     float16_t x, y, z;
@@ -125,15 +230,15 @@ void genMulTests(uint16_t *e, uint16_t *f, int sgn, char *testName, char *desc, 
             y.v = cases[j].v;
             for (k=0; k<=sgn; k++) {
                 y.v ^= (k<<15);
-                genCase(fptr, x, y, z, 1, 0, 1, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
-                // if(sgn == 1){
-                //     genCase(fptr, x, y, z, 1, 0, 1, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
-                // }
+                genCase(fptr, x, y, z, 1, 0, k, 0, roundingMode, zeroAllowed, infAllowed, nanAllowed);
+
             }
         }
     }
     fclose(fptr);
 }
+
+//rm = 00 for RZ, 01 for RNE, 10 for RP, or 11 for RN.
 
 int main()
 {
@@ -142,14 +247,20 @@ int main()
  
     // Test cases: multiplication
     genMulTests(easyExponents, easyFracts, 0, "fmul_0", "// Multiply with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);
-    genMulTests(medExponents, medFracts, 0, "fmul_1", "// Multiply with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);
-    genMulTests(medExponents, medFracts, 1, "fmul_2", "// Multiply with medium exponents and significands", 0, 0, 0, 0);
+    genMulTests(medExponents, medFracts, 0, "fmul_1", "// Postive cases", 0, 0, 0, 0);
+    genMulTests(medExponents, medFracts, 1, "fmul_2", "// Positive + negative cases", 0, 0, 0, 0);
 
-/*  // example of how to generate tests with a different rounding mode
-    softfloat_roundingMode = softfloat_round_near_even; 
-    genMulTests(easyExponents, easyFracts, 0, "fmul_0_rne", "// Multiply with exponent of 0, significand of 1.0 and 1.1, RNE", 1, 0, 0, 0); */
+    //Test Cases: Addition
+    genAddTests(easyExponents, easyFracts, 0, "fadd_0", "//Add with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);
+    genAddTests(medExponents, medFracts, 0, "fadd_1", "// Positive cases", 0, 0, 0, 0);
+    genAddTests(medExponents, medFracts, 1, "fadd_2", "// Positive + negative cases", 0, 0, 0, 0);
 
-    // Add your cases here
-  
-    return 0;
+    //Test Cases: Multiply-Accumulate
+    genMultiplyAccumulateTests(easyExponents, easyFracts, 0, "fma_0", "// FMA with exponent of 0, significand of 1.0 and 1.1, RZ", 0, 0, 0, 0);
+    genMultiplyAccumulateTests(medExponents, medFracts, 0, "fma_1", "// FMA, positive cases", 0, 0, 0, 0);
+    genMultiplyAccumulateTests(medExponents, medFracts, 1, "fma_2", "// FMA, positive + negative cases", 0, 0, 0, 0);
+
+    //Test Cases: Special 
+    genSpecialTests(specialExponents, specialFracts, 0, "spe_0", "// Nan, zeros, and inf allowed", 0);
+    genSpecialTests(specialExponents, specialFracts, 1, "spe_2", "// Nan, zeros, and inf allowed", 0);       
 }
