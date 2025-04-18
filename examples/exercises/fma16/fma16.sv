@@ -40,12 +40,12 @@ unpack unpack(x, y, z, XZero, YZero, ZZero, XInf, YInf, ZInf, XNaN, YNaN, ZNaN);
 fmaMul fmaMul(x, y, bias, negp, XZero, YZero, Ps, Pe, Pm);
 
 // temp result for fmul test
-assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
+// assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
 
 // fadd
 
-// fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
-// assign result = {Ss, Se[4:0] , Sm[20:11]};
+fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
+assign result = {Ss, Se[4:0] , Sm[20:11]};
 
 assign flags = 0;
 
@@ -108,18 +108,23 @@ module fmaAdd(
 
     logic           subtract;
     logic[6:0]      Acnt;
-    logic[40:0]     Am;
     logic           KillP, KillZ;
-    logic[21:0]     ZmPreshift;
+    logic[21:0]     ZmPreshift, PmPreshift;
     logic[21:0]     ZmShifted;
     logic[21:0]     PmShifted;
     logic           ASticky;
+    logic[39:0]     Zma;
+    logic[39:0]     Pma;
+    logic[39:0]     ZTemp;
+    logic[39:0]     PTemp;
     
 
     logic[5:0]      Mcnt;
     logic[21:0]     MmC;
 
     logic[21:0]     Mm;
+    logic           ShiftPE;
+    logic[39:0]     NegZ, NegP, subSum;
 
 
     assign Zs           = z[15];
@@ -130,31 +135,50 @@ module fmaAdd(
     assign subtract     = Ps ^ As;              // diff sign, subtraction
 
 
+
     // Determine the alignment shift count
-    assign ZmPreshift   = {Zm, 11'b0};   // placed z in the upper bit
-    assign KillZ = 0;
-    assign KillP = 0;
+    assign Zma = {1'b0, Zm[9:0], 29'b0};
+    assign Pma = {1'b0, Pm[19:0], 19'b0};
+
+    assign ZmPreshift   = {1'b0, Zm, 10'b0};   // placed z in the upper bit
 
 
     always_comb begin
         if (Pe > {2'b0, Ze}) begin
             Acnt         = Pe - {2'b0, Ze};
-            ZmShifted = ZmPreshift >> Acnt;
-        end else begin
+            ZTemp        = Zma >> Acnt;
+            PTemp        = Pma;
+            ZmShifted    = ZmPreshift >> Acnt;
+            PmShifted    = Pm;
+            ShiftPE      = 1;
+        end else if (Pe < {2'b0, Ze} )begin
             Acnt         = {2'b0, Ze} - Pe;
-            PmShifted    = Pm >> Acnt; 
+            PTemp        = Pma >> Acnt;
+            ZTemp        = Zma;
+            PmShifted    = Pm >> Acnt;
+            ZmShifted    = ZmPreshift;   
+            ShiftPE      = 0; 
+        end else begin
+            Acnt = 0;
+            ZTemp        = Zma;
+            PTemp        = Pma;
+            ZmShifted    = ZmPreshift >> Acnt;
+            PmShifted    = Pm;
+            ShiftPE   = 1;
         end
 
-    end
+        assign NegZ = (~ZTemp)+1;
+        assign NegP = (~PTemp)+1;
 
-    always_comb begin
         if (subtract) begin
-            if (ZmShifted > PmShifted) begin
+            if (ZTemp > PTemp) begin
                 Ss = As;
-                Mm = ZmShifted - PmShifted;
+                subSum = Zma+NegP; 
+                Mm = {1'b1, subSum[38:18]};
             end else begin
                 Ss = Ps;
-                Mm = PmShifted - ZmShifted;
+                subSum = Pma+NegZ;
+                Mm = {1'b0, 1'b1, subSum[38:19]};
             end
         end else begin
                 Mm =  ZmShifted + PmShifted;
@@ -164,28 +188,28 @@ module fmaAdd(
 
     // Finding the leading 1 for normaliztion shift
         casez(Mm)
-            22'b1?????????????????????: begin Mcnt = 6'd21; end
-            22'b01????????????????????: begin Mcnt = 6'd20; end
-            22'b001???????????????????: begin Mcnt = 6'd19; end
-            22'b0001??????????????????: begin Mcnt = 6'd18; end
-            22'b00001?????????????????: begin Mcnt = 6'd17; end
-            22'b000001????????????????: begin Mcnt = 6'd16; end
-            22'b0000001???????????????: begin Mcnt = 6'd15; end
-            22'b00000001??????????????: begin Mcnt = 6'd14; end
-            22'b000000001?????????????: begin Mcnt = 6'd13; end
-            22'b0000000001????????????: begin Mcnt = 6'd12; end
-            22'b00000000001???????????: begin Mcnt = 6'd11; end  //invalid to prevent shifting
-            22'b000000000001??????????: begin Mcnt = 6'd10; end
-            22'b0000000000001?????????: begin Mcnt = 6'd9;  end
-            22'b00000000000001????????: begin Mcnt = 6'd8;  end
-            22'b000000000000001???????: begin Mcnt = 6'd7;  end
-            22'b0000000000000001??????: begin Mcnt = 6'd6;  end
-            22'b00000000000000001?????: begin Mcnt = 6'd5;  end
-            22'b000000000000000001????: begin Mcnt = 6'd4;  end
-            22'b0000000000000000001???: begin Mcnt = 6'd3;  end
-            22'b00000000000000000001??: begin Mcnt = 6'd2;  end
-            22'b000000000000000000001?: begin Mcnt = 6'd1;  end
-            22'b0000000000000000000001: begin Mcnt = 6'd0;  end
+            22'b1?????????????????????: begin Mcnt = 6'd0; end
+            22'b01????????????????????: begin Mcnt = 6'd1; end
+            22'b001???????????????????: begin Mcnt = 6'd2; end
+            22'b0001??????????????????: begin Mcnt = 6'd3; end
+            22'b00001?????????????????: begin Mcnt = 6'd4; end
+            22'b000001????????????????: begin Mcnt = 6'd5; end
+            22'b0000001???????????????: begin Mcnt = 6'd6; end
+            22'b00000001??????????????: begin Mcnt = 6'd7; end
+            22'b000000001?????????????: begin Mcnt = 6'd8; end
+            22'b0000000001????????????: begin Mcnt = 6'd9; end
+            22'b00000000001???????????: begin Mcnt = 6'd10; end  //invalid to prevent shifting
+            22'b000000000001??????????: begin Mcnt = 6'd11; end
+            22'b0000000000001?????????: begin Mcnt = 6'd12;  end
+            22'b00000000000001????????: begin Mcnt = 6'd13;  end
+            22'b000000000000001???????: begin Mcnt = 6'd14;  end
+            22'b0000000000000001??????: begin Mcnt = 6'd15;  end
+            22'b00000000000000001?????: begin Mcnt = 6'd16;  end
+            22'b000000000000000001????: begin Mcnt = 6'd17;  end
+            22'b0000000000000000001???: begin Mcnt = 6'd18;  end
+            22'b00000000000000000001??: begin Mcnt = 6'd19;  end
+            22'b000000000000000000001?: begin Mcnt = 6'd20;  end
+            22'b0000000000000000000001: begin Mcnt = 6'd21;  end
             default: begin
                 Mcnt = 6'd0;
             end
@@ -202,9 +226,10 @@ module fmaAdd(
     
   end
 
-    assign MmC = (Mm << Mcnt);
-    assign Sm = MmC;
-    assign Se = Pe - Mcnt;
+    assign Sm = Mm << Mcnt;
+    assign Se = ShiftPE ? (Pe - Mcnt + 1) : ({2'b0, Ze} - Mcnt+1);
+    // assign Sm = Mm;// [39:18]; 
+    // assign Se = Pe;
 
 
 endmodule

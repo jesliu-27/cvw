@@ -21,7 +21,7 @@ module testbench_fma16;
   // at start of test, load vectors and pulse reset
   initial
     begin
-      $readmemh("tests/fmul_2.tv", testvectors);
+      $readmemh("tests/fadd_2.tv", testvectors);
       vectornum = 0; errors = 0;
       reset = 1; #22; reset = 0;
     end
@@ -37,7 +37,7 @@ module testbench_fma16;
   always @(negedge clk)
     if (~reset) begin // skip during reset
       if (result !== rexpected /* | flags !== flagsexpected */) begin  // check result
-        $display("Error: inputs %h * %h + %h", x, y, z);
+        $display("Error: inputs %h * %h + %h (negp = %h, negz = %h, roundmode = %h)", x, y, z, negp, negz, roundmode);
         $display("  result = %h (%h expected) flags = %b (%b expected)", 
           result, rexpected, flags, flagsexpected);
         errors = errors + 1;
