@@ -40,13 +40,12 @@ unpack unpack(x, y, z, XZero, YZero, ZZero, XInf, YInf, ZInf, XNaN, YNaN, ZNaN);
 fmaMul fmaMul(x, y, bias, negp, XZero, YZero, Ps, Pe, Pm);
 
 // temp result for fmul test
-// assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
+assign result = {Ps, Pe[4:0]+ {4'b0000, Pm[21]} , Pm[21] ? Pm[20:11]:Pm[19:10]};
 
 // fadd
 
-fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
-assign result = {Ss, Se[4:0] , Sm[20:11]};
-
+// fmaAdd fmaAdd(z, negz, Ps, Pe, Pm, XZero, YZero, ZZero, Ss, Se, Sm);
+// assign result = {Ss, Se[4:0] , Sm[20:11]};
 
 assign flags = 0;
 
@@ -82,14 +81,6 @@ module fmaMul(
 
     // calculate product's sign
     assign Ps = Xs ^ Ys ^ negp;
-
-    // // calculate product's exponent
-    // assign PZero        = XZero | YZero;    // if input = 0, Pe = 0
-    // assign PExponent    = {2'b0, Xe} + {2'b0, Ye} - {2'b0, bias};  // Xe+Ye-bias
-    // assign Pe           = PZero ? '0 : PExponent;
-
-    // // calculate product's significand
-    // assign Pm = Xm * Ym;
 
     assign PZero     = XZero | YZero;
 
@@ -255,9 +246,6 @@ module fmaAdd(
     end
     
   end
-    // assign Sm = 0;
-    // assign Se = 0;
-    // assign Ss = 0;
 
 
 endmodule
